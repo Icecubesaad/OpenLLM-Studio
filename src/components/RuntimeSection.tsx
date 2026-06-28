@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { createRuntimeInstallError, type RuntimeInstallError } from '../lib/runtimeErrors';
 
 // Rust unit-variant enums serialize as plain strings via serde, e.g. "Cpu"
 // BinaryStatus.variant is a string like "Cpu", "Cuda12_4", etc.
@@ -39,7 +40,8 @@ export function RuntimeSection() {
   const [recommended, setRecommended] = useState<string>('');
   const [downloading, setDownloading] = useState<string | null>(null);
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<RuntimeInstallError | null>(null);
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -71,20 +73,25 @@ export function RuntimeSection() {
       console.log('[RuntimeSection] Statuses:', JSON.stringify(normalizedStats));
     } catch (e) {
       console.error('Failed to load binary data:', e);
-      setError(`Failed to load binary information: ${e}`);
+      setError({
+        message: "Couldn't load runtime information.",
+        details: String(e),
+      });
     }
   }
 
   async function handleDownload(variantKey: string) {
     setDownloading(variantKey);
     setError(null);
+    setShowErrorDetails(false);
 
     try {
       // Send variant as the string directly — serde handles both "Cpu" and {"Cpu": null}
       await invoke('download_binary', { variant: variantKey });
       await loadData();
     } catch (e) {
-      setError(`Download failed: ${e}`);
+      const runtimeName = VARIANT_LABELS[variantKey]?.name || variantKey;
+      setError(createRuntimeInstallError(e, `the ${runtimeName} runtime`));
     } finally {
       setDownloading(null);
       setProgress(null);
@@ -107,7 +114,19 @@ export function RuntimeSection() {
 
       {error && (
         <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
-          <p className="text-sm text-red-400">{error}</p>
+          <p className="whitespace-pre-line text-sm font-medium text-red-300">{error.message}</p>
+          <button
+            type="button"
+            onClick={() => setShowErrorDetails((value) => !value)}
+            className="mt-2 text-xs font-medium text-red-200 underline underline-offset-4 hover:text-white"
+          >
+            {showErrorDetails ? 'Hide Details' : 'View Details'}
+          </button>
+          {showErrorDetails && (
+            <pre className="mt-2 max-h-32 overflow-auto rounded-md bg-black/30 p-2 text-xs leading-relaxed text-red-100 whitespace-pre-wrap">
+              {error.details}
+            </pre>
+          )}
         </div>
       )}
 

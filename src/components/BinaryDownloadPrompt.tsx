@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { createRuntimeInstallError, type RuntimeInstallError } from '../lib/runtimeErrors';
 
 interface DownloadProgress {
   variant: unknown;
@@ -41,7 +42,8 @@ export function BinaryDownloadPrompt({ onBinaryReady }: BinaryDownloadPromptProp
   const [statuses, setStatuses] = useState<BinaryStatus[]>([]);
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<RuntimeInstallError | null>(null);
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
 
   useEffect(() => {
     loadInitialData();
@@ -68,7 +70,10 @@ export function BinaryDownloadPrompt({ onBinaryReady }: BinaryDownloadPromptProp
       console.log('[BinaryDownloadPrompt] Recommended:', recKey);
       console.log('[BinaryDownloadPrompt] Statuses:', JSON.stringify(currentStatuses));
     } catch (e) {
-      setError(`Failed to detect hardware: ${e}`);
+      setError({
+        message: "Couldn't detect the recommended runtime.",
+        details: String(e),
+      });
     }
   }
 
@@ -83,7 +88,8 @@ export function BinaryDownloadPrompt({ onBinaryReady }: BinaryDownloadPromptProp
       await loadInitialData();
       onBinaryReady?.();
     } catch (e) {
-      setError(`Download failed: ${e}`);
+      setError(createRuntimeInstallError(e, `the ${displayName} runtime`));
+      setShowErrorDetails(false);
     } finally {
       setDownloading(false);
     }
@@ -147,7 +153,19 @@ export function BinaryDownloadPrompt({ onBinaryReady }: BinaryDownloadPromptProp
 
         {error && (
           <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
-            <p className="text-sm text-red-400">{error}</p>
+            <p className="whitespace-pre-line text-sm font-medium text-red-300">{error.message}</p>
+            <button
+              type="button"
+              onClick={() => setShowErrorDetails((value) => !value)}
+              className="mt-2 text-xs font-medium text-red-200 underline underline-offset-4 hover:text-white"
+            >
+              {showErrorDetails ? 'Hide Details' : 'View Details'}
+            </button>
+            {showErrorDetails && (
+              <pre className="mt-2 max-h-32 overflow-auto rounded-md bg-black/30 p-2 text-xs leading-relaxed text-red-100 whitespace-pre-wrap">
+                {error.details}
+              </pre>
+            )}
           </div>
         )}
 

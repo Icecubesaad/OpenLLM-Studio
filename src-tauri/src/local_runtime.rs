@@ -328,7 +328,7 @@ impl RuntimeManager {
         let candidates = if cfg!(target_os = "windows") {
             self.windows_binary_candidates(binary_name)
         } else {
-            vec![self.runtime_root.join(binary_name)]
+            self.unix_binary_candidates(binary_name)
         };
 
         for candidate in &candidates {
@@ -412,6 +412,68 @@ impl RuntimeManager {
 
         candidates
     }
+
+    fn unix_binary_candidates(&self, binary_name: &str) -> Vec<PathBuf> {
+        let mut candidates = Vec::new();
+
+        if let Some(app_dir) = self.model_root.parent() {
+            let binaries_dir = app_dir.join("llama-binaries");
+            let variant_dirs: &[&str] = if cfg!(target_os = "macos") {
+                &["metal", "cpu"]
+            } else {
+                &["cuda-13.1", "cuda-12.4", "vulkan", "cpu"]
+            };
+
+            for variant_dir in variant_dirs {
+                let root = binaries_dir.join(variant_dir);
+                candidates.push(root.join(binary_name));
+                candidates.extend(Self::find_named_files(&root, binary_name));
+            }
+
+            candidates.push(binaries_dir.join(binary_name));
+        }
+
+        if cfg!(target_os = "macos") {
+            candidates.push(self.runtime_root.join("macos").join("metal").join(binary_name));
+            candidates.push(self.runtime_root.join("macos").join("cpu").join(binary_name));
+            candidates.push(self.runtime_root.join("metal").join(binary_name));
+            candidates.push(self.runtime_root.join("cpu").join(binary_name));
+        } else {
+            candidates.push(self.runtime_root.join("linux").join("cuda-13.1").join(binary_name));
+            candidates.push(self.runtime_root.join("linux").join("cuda-12.4").join(binary_name));
+            candidates.push(self.runtime_root.join("linux").join("vulkan").join(binary_name));
+            candidates.push(self.runtime_root.join("linux").join("cpu").join(binary_name));
+            candidates.push(self.runtime_root.join("cuda-13.1").join(binary_name));
+            candidates.push(self.runtime_root.join("cuda-12.4").join(binary_name));
+            candidates.push(self.runtime_root.join("vulkan").join(binary_name));
+            candidates.push(self.runtime_root.join("cpu").join(binary_name));
+        }
+
+        candidates.push(self.runtime_root.join(binary_name));
+
+        let source_resource_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join("llama");
+
+        if cfg!(target_os = "macos") {
+            candidates.push(source_resource_root.join("macos").join("metal").join(binary_name));
+            candidates.push(source_resource_root.join("macos").join("cpu").join(binary_name));
+            candidates.push(source_resource_root.join("metal").join(binary_name));
+            candidates.push(source_resource_root.join("cpu").join(binary_name));
+        } else {
+            candidates.push(source_resource_root.join("linux").join("cuda-13.1").join(binary_name));
+            candidates.push(source_resource_root.join("linux").join("cuda-12.4").join(binary_name));
+            candidates.push(source_resource_root.join("linux").join("vulkan").join(binary_name));
+            candidates.push(source_resource_root.join("linux").join("cpu").join(binary_name));
+            candidates.push(source_resource_root.join("cuda-13.1").join(binary_name));
+            candidates.push(source_resource_root.join("cuda-12.4").join(binary_name));
+            candidates.push(source_resource_root.join("vulkan").join(binary_name));
+            candidates.push(source_resource_root.join("cpu").join(binary_name));
+        }
+
+        candidates.push(source_resource_root.join(binary_name));
+        candidates
+    }
 }
 
 impl Drop for RuntimeManager {
@@ -447,6 +509,29 @@ fn default_thread_count() -> i32 {
 }
 
 impl RuntimeManager {
+    fn find_named_files(root: &Path, binary_name: &str) -> Vec<PathBuf> {
+        let mut found = Vec::new();
+        Self::collect_named_files(root, binary_name, &mut found);
+        found
+    }
+
+    fn collect_named_files(root: &Path, binary_name: &str, found: &mut Vec<PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(root) else {
+            return;
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.file_name().and_then(|name| name.to_str()) == Some(binary_name) && path.is_file() {
+                found.push(path);
+                continue;
+            }
+            if path.is_dir() {
+                Self::collect_named_files(&path, binary_name, found);
+            }
+        }
+    }
+
     fn has_command(command: &str) -> bool {
         StdCommand::new(command)
             .arg("--version")

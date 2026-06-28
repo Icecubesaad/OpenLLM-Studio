@@ -8,6 +8,14 @@ interface HardwareInfoSectionProps {
 }
 
 export function HardwareInfoSection({ hardwareInfo, onRedetect, isDetecting }: HardwareInfoSectionProps) {
+  const usesUnifiedMemory = hardwareInfo
+    ? hardwareInfo.gpu_backend === 'apple_metal' || hardwareInfo.is_shared_memory === true
+    : false;
+  const acceleratorMemoryGb = hardwareInfo
+    ? usesUnifiedMemory ? hardwareInfo.ram_gb : hardwareInfo.vram_gb
+    : 0;
+  const acceleratorMemoryLabel = usesUnifiedMemory ? 'Unified Memory' : 'VRAM';
+
   const getBackendLabel = (backend: string) => {
     switch (backend) {
       case 'nvidia':
@@ -93,7 +101,7 @@ export function HardwareInfoSection({ hardwareInfo, onRedetect, isDetecting }: H
             </p>
           </div>
 
-          {/* VRAM Card */}
+          {/* Accelerator memory card */}
           <div className="bg-[#1F1F1F] rounded-xl p-4 border border-[#2A2A2A]">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-10 h-10 rounded-lg bg-[#1C1C1C] flex items-center justify-center border border-[#333333]">
@@ -102,10 +110,10 @@ export function HardwareInfoSection({ hardwareInfo, onRedetect, isDetecting }: H
                 </svg>
               </div>
               <div>
-                <p className="text-xs text-[#B1ADA1]">VRAM</p>
+                <p className="text-xs text-[#B1ADA1]">{acceleratorMemoryLabel}</p>
                 <p className="text-sm text-white font-medium">
-                  {hardwareInfo.vram_gb.toFixed(1)} GB
-                  {hardwareInfo.is_shared_memory && (
+                  {acceleratorMemoryGb.toFixed(1)} GB
+                  {usesUnifiedMemory && (
                     <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-medium bg-amber-900/40 text-amber-400 rounded">shared</span>
                   )}
                 </p>
@@ -114,7 +122,7 @@ export function HardwareInfoSection({ hardwareInfo, onRedetect, isDetecting }: H
             <div className="w-full bg-[#2A2A2A] rounded-full h-1.5">
               <div 
                 className="bg-gradient-to-r from-[#C15F3C] to-[#D47A5A] h-1.5 rounded-full" 
-                style={{ width: `${Math.min((hardwareInfo.vram_gb / 24) * 100, 100)}%` }}
+                style={{ width: `${Math.min((acceleratorMemoryGb / (usesUnifiedMemory ? 64 : 24)) * 100, 100)}%` }}
               ></div>
             </div>
           </div>
