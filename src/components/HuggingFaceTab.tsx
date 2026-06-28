@@ -97,9 +97,9 @@ export function HuggingFaceTab() {
       return;
     }
 
-    // Check if model is gated and no token
-    if (selectedModel.tags.includes('gated') && !hfToken) {
-      alert('This model requires authentication. Please configure your HuggingFace token in Settings.');
+    // Public HuggingFace models do not need a token, but gated/private repos still do.
+    if (modelRequiresHfToken(selectedModel, modelDetails) && !hfToken) {
+      alert('This model requires a HuggingFace token. Public models can be downloaded without one.');
       return;
     }
 
@@ -122,23 +122,12 @@ export function HuggingFaceTab() {
     }
   };
 
+  const selectedModelRequiresToken = selectedModel
+    ? modelRequiresHfToken(selectedModel, modelDetails)
+    : false;
+
   return (
     <div className="flex flex-col h-full">
-      {/* Token Guard */}
-      {!hfToken ? (
-        <div className="flex items-center justify-center h-full">
-          <div className="text-center max-w-md px-6">
-            <svg className="w-16 h-16 mx-auto mb-4 text-[#B1ADA1] opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-            </svg>
-            <p className="text-white text-lg font-medium mb-2">HuggingFace token is missing</p>
-            <p className="text-[#B1ADA1] text-sm">
-              Please add your HuggingFace token in Settings → Integrations to browse and download models.
-            </p>
-          </div>
-        </div>
-      ) : (
-      <>
       {/* Search bar */}
       <div className="mb-4">
         <HfSearchBar
@@ -149,6 +138,22 @@ export function HuggingFaceTab() {
           autoFocus={!selectedModel}
         />
       </div>
+
+      {!hfToken && (
+        <div className="mb-4 rounded-lg border border-dark-border bg-dark-surface p-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-dark-text">Browsing public HuggingFace models</p>
+              <p className="text-xs text-dark-text-secondary">
+                A token is only needed for gated or private repositories.
+              </p>
+            </div>
+            <span className="w-fit rounded-full bg-green-600/15 px-2.5 py-1 text-xs font-medium text-green-400">
+              No token required
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Filter controls - only show when not viewing a specific model */}
       {!selectedModel && activeSearchQuery && (
@@ -284,7 +289,7 @@ export function HuggingFaceTab() {
                 </div>
               )}
               
-              {selectedModel.tags.includes('gated') && !hfToken && (
+              {selectedModelRequiresToken && !hfToken && (
                 <div className="bg-yellow-900/20 border border-yellow-800 rounded-lg p-3 mb-4" role="alert">
                   <div className="flex items-start gap-2">
                     <svg className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -293,7 +298,7 @@ export function HuggingFaceTab() {
                     <div>
                       <p className="text-dark-text text-sm font-medium">Authentication Required</p>
                       <p className="text-dark-text-secondary text-sm">
-                        This is a gated model. Please configure your HuggingFace token in Settings to download.
+                        This model is gated or private. Add a HuggingFace token in Settings to download it.
                       </p>
                     </div>
                   </div>
@@ -374,8 +379,6 @@ export function HuggingFaceTab() {
           </div>
         )}
       </div>
-      </>
-      )}
     </div>
   );
 }
@@ -384,4 +387,9 @@ function deriveModelName(repoId: string, filename: string): string {
   const baseName = repoId.split('/').pop() || repoId;
   const quantization = filename.match(/Q\d+_K_[MSL]|Q\d+_\d+|Q\d+|F\d+/i)?.[0] || '';
   return `${baseName}-${quantization}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+}
+
+function modelRequiresHfToken(model: HfModel, details?: { tags: string[] } | null): boolean {
+  const tags = [...model.tags, ...(details?.tags ?? [])].map((tag) => tag.toLowerCase());
+  return tags.some((tag) => tag === 'gated' || tag === 'private');
 }

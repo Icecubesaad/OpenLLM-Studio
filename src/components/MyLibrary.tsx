@@ -5,7 +5,11 @@ import { ErrorBanner } from './ErrorBanner';
 import { LoadingSpinner } from './LoadingSpinner';
 import { formatBytes, formatSpeed } from '../lib/utils';
 
-export function MyLibrary() {
+interface MyLibraryProps {
+  onBrowseModels?: () => void;
+}
+
+export function MyLibrary({ onBrowseModels }: MyLibraryProps) {
   const { installedModels, isLoading, error, refreshModels } = useModels();
   const { deleteModel, error: deleteError } = useModelDelete(refreshModels);
   const { downloads } = useModelDownload(refreshModels);
@@ -119,8 +123,15 @@ export function MyLibrary() {
             </div>
             <h3 className="text-dark-text font-medium mb-2">No models installed</h3>
             <p className="text-dark-text-secondary text-sm mb-6">
-              Download models from the Browse tab or use the Model Wizard to get started
+              Download a curated model from Browse, or use the wizard later for AI recommendations.
             </p>
+            <button
+              onClick={onBrowseModels}
+              className="inline-flex items-center justify-center px-4 py-2 bg-dark-accent hover:bg-dark-accent-hover text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+              disabled={!onBrowseModels}
+            >
+              Browse Models
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

@@ -1,11 +1,17 @@
 import { useState } from 'react';
 import { CustomTitleBar } from '../components/CustomTitleBar';
 import { ModelStatusIndicator } from '../components/ModelStatusIndicator';
-import { ModelLibraryTabs } from '../components/ModelLibraryTabs';
+import { ModelLibraryTabs, type ModelLibraryTab } from '../components/ModelLibraryTabs';
 import { ModelWizard } from '../components/ModelWizard';
 
 export function ModelLibraryPage() {
   const [showWizard, setShowWizard] = useState(false);
+  const [activeTab, setActiveTab] = useState<ModelLibraryTab>('my-library');
+
+  const browseModelsManually = () => {
+    setShowWizard(false);
+    setActiveTab('browse');
+  };
 
   return (
     <div className="flex flex-col h-screen bg-dark-bg">
@@ -31,7 +37,7 @@ export function ModelLibraryPage() {
       </div>
       
       <div className="flex-1 overflow-hidden">
-        <ModelLibraryTabs />
+        <ModelLibraryTabs activeTab={activeTab} onTabChange={setActiveTab} />
       </div>
 
       {showWizard && (
@@ -40,7 +46,7 @@ export function ModelLibraryPage() {
             <div className="sticky top-0 bg-dark-bg-secondary border-b border-dark-border px-6 py-4 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-dark-text">Model Setup Wizard</h2>
-                <p className="text-dark-text-secondary text-sm mt-0.5">AI-powered model recommendations</p>
+                <p className="text-dark-text-secondary text-sm mt-0.5">Hardware-aware model recommendations</p>
               </div>
               <button
                 onClick={() => setShowWizard(false)}
@@ -52,7 +58,10 @@ export function ModelLibraryPage() {
               </button>
             </div>
             <div className="overflow-y-auto max-h-[calc(90vh-80px)]">
-              <ModelWizard onClose={() => setShowWizard(false)} />
+              <ModelWizard
+                onClose={() => setShowWizard(false)}
+                onBrowseManually={browseModelsManually}
+              />
             </div>
           </div>
         </div>

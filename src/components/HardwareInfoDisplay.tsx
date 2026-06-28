@@ -61,6 +61,10 @@ export function HardwareInfoDisplay() {
     return <div className="text-red-600">Failed to detect hardware</div>;
   }
 
+  const usesUnifiedMemory = hardware.gpu_backend === 'apple_metal' || hardware.is_shared_memory === true;
+  const acceleratorMemoryLabel = usesUnifiedMemory ? 'Unified Memory' : 'VRAM';
+  const acceleratorMemoryGb = usesUnifiedMemory ? hardware.ram_gb : hardware.vram_gb;
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
@@ -82,10 +86,10 @@ export function HardwareInfoDisplay() {
         </div>
 
         <div>
-          <div className="text-sm text-gray-600 dark:text-gray-400">VRAM</div>
+          <div className="text-sm text-gray-600 dark:text-gray-400">{acceleratorMemoryLabel}</div>
           <div className="font-medium">
-            {hardware.vram_gb.toFixed(1)} GB
-            {hardware.is_shared_memory && (
+            {acceleratorMemoryGb.toFixed(1)} GB
+            {usesUnifiedMemory && (
               <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 rounded">shared</span>
             )}
           </div>

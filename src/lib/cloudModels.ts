@@ -10,9 +10,11 @@ export interface CloudModel {
   contextWindow?: string;
 }
 
+export const DEFAULT_OPENROUTER_MODEL = 'google/gemma-4-26b-a4b-it:free';
+
 export const OPENROUTER_MODELS: CloudModel[] = [
-  { id: 'google/gemma-4-27b-it:free', name: 'Gemma 4 27B IT (Free)', provider: 'openrouter', description: 'Google Gemma 4 27B — Free tier' },
   { id: 'google/gemma-4-26b-a4b-it:free', name: 'Gemma 4 26B A4B IT (Free)', provider: 'openrouter', description: 'Google Gemma 4 26B A4B — Free tier' },
+  { id: 'google/gemma-4-31b-it:free', name: 'Gemma 4 31B IT (Free)', provider: 'openrouter', description: 'Google Gemma 4 31B — Free tier' },
   { id: 'arcee-ai/trinity-large-preview:free', name: 'Trinity Large Preview (Free)', provider: 'openrouter', description: 'Arcee AI Trinity Large — Free tier' },
   { id: 'meta-llama/llama-4-maverick:free', name: 'Llama 4 Maverick (Free)', provider: 'openrouter', description: 'Meta Llama 4 Maverick — Free tier' },
   { id: 'deepseek/deepseek-r1:free', name: 'DeepSeek R1 (Free)', provider: 'openrouter', description: 'DeepSeek R1 reasoning model — Free tier' },

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Model, Conversation, Message, LoadedModel, HardwareInfo, OptimizationSettings, HfDownloadProgress } from '../lib/types';
 import type { ToastMessage } from '../components/ToastContainer';
+import { DEFAULT_OPENROUTER_MODEL } from '../lib/cloudModels';
 
 interface AppState {
   // Ollama connection
@@ -80,12 +81,17 @@ export const useAppStore = create<AppState>((set) => ({
     const claudeApiKey = localStorage.getItem('openllm-claude-api-key');
     const openAiApiKey = localStorage.getItem('openllm-openai-api-key');
     const savedWizardProvider = localStorage.getItem('openllm-wizard-provider') as 'openrouter' | 'claude' | 'openai' | null;
+    const savedOpenRouterModel = localStorage.getItem('openllm-openrouter-model');
 
     return {
       recommendationApiKey: legacyRecommendationApiKey,
       openRouterApiKey,
       claudeApiKey,
       openAiApiKey,
+      openRouterModel:
+        savedOpenRouterModel === 'google/gemma-4-27b-it:free'
+          ? DEFAULT_OPENROUTER_MODEL
+          : savedOpenRouterModel || DEFAULT_OPENROUTER_MODEL,
       wizardProvider:
         savedWizardProvider ||
         (openRouterApiKey ? 'openrouter' : claudeApiKey ? 'claude' : 'openai'),
@@ -106,7 +112,6 @@ export const useAppStore = create<AppState>((set) => ({
   hfToken: localStorage.getItem('openllm-hf-token'),
   hfUsername: localStorage.getItem('openllm-hf-username'),
   hfDownloads: new Map(),
-  openRouterModel: localStorage.getItem('openllm-openrouter-model') || 'google/gemma-4-27b-it:free',
   claudeModel: localStorage.getItem('openllm-claude-model') || 'claude-sonnet-4-6',
   openAiModel: localStorage.getItem('openllm-openai-model') || 'gpt-5.4',
   

@@ -29,6 +29,8 @@ pub enum UseCase {
 
 pub struct ModelRecommender;
 
+const DEFAULT_OPENROUTER_FREE_MODEL: &str = "google/gemma-4-26b-a4b-it:free";
+
 #[derive(Debug, Clone)]
 struct VerifiedRepoCandidate {
     repo_id: String,
@@ -56,15 +58,62 @@ impl ModelRecommender {
         hf_token: Option<String>,
         app_handle: &tauri::AppHandle,
     ) -> Result<Vec<ModelRecommendation>, AppError> {
-        // Require API key - no fallback
-        let api_key = api_key
-            .or_else(|| env::var("OPENROUTER_API_KEY").ok())
-            .or_else(|| env::var("ANTHROPIC_API_KEY").ok())
-            .or_else(|| env::var("OPENAI_API_KEY").ok())
-            .ok_or_else(|| AppError::HfError("No API key provided. Please add an API key in Settings.".to_string()))?;
+        let provider = provider.to_lowercase();
+        let api_key = clean_api_key(api_key).or_else(|| env_api_key_for_provider(&provider));
 
-        // Get AI recommendations based on provider
-        self.get_ai_recommendations(available_ram_gb, available_vram_gb, &use_case, api_key, provider, model, hf_token, app_handle).await
+        if let Some(api_key) = api_key {
+            let _ = app_handle.emit(
+                "wizard-status",
+                if provider == "openrouter" {
+                    "Getting OpenRouter recommendation..."
+                } else {
+                    "Getting AI recommendation..."
+                },
+            );
+
+            return match self
+                .get_ai_recommendations(
+                    available_ram_gb,
+                    available_vram_gb,
+                    &use_case,
+                    api_key,
+                    provider,
+                    model,
+                    hf_token,
+                    app_handle,
+                )
+                .await
+            {
+                Ok(recommendations) => Ok(recommendations),
+                Err(error) => {
+                    println!(
+                        "[ModelRecommender] AI recommendations failed; falling back to local recommendations: {}",
+                        error
+                    );
+                    let _ = app_handle.emit(
+                        "wizard-status",
+                        "AI recommendation unavailable. Falling back to local model options...",
+                    );
+                    self.get_fallback_recommendations(
+                        available_ram_gb,
+                        available_vram_gb,
+                        use_case,
+                    )
+                }
+            };
+        }
+
+        let _ = app_handle.emit(
+            "wizard-status",
+            "No AI key configured. Finding public local models...",
+        );
+
+        let fallback = self.get_fallback_recommendations(
+            available_ram_gb,
+            available_vram_gb,
+            use_case.clone(),
+        )?;
+        Ok(fallback)
     }
 
     async fn get_ai_recommendations(
@@ -130,7 +179,7 @@ impl ModelRecommender {
         hf_token: Option<String>,
         app_handle: &tauri::AppHandle,
     ) -> Result<Vec<ModelRecommendation>, AppError> {
-        let model_id = model.unwrap_or_else(|| "google/gemma-4-27b-it:free".to_string());
+        let model_id = model.unwrap_or_else(|| DEFAULT_OPENROUTER_FREE_MODEL.to_string());
         println!("[ModelRecommender] OpenRouter using model: {}", model_id);
 
         let payload = serde_json::json!({
@@ -721,6 +770,22 @@ impl ModelRecommender {
         recommendations.sort_by(|a, b| b.suitability_score.partial_cmp(&a.suitability_score).unwrap());
         Ok(recommendations.into_iter().take(5).collect())
     }
+}
+
+fn clean_api_key(api_key: Option<String>) -> Option<String> {
+    api_key
+        .map(|key| key.trim().to_string())
+        .filter(|key| !key.is_empty())
+}
+
+fn env_api_key_for_provider(provider: &str) -> Option<String> {
+    match provider {
+        "openrouter" => env::var("OPENROUTER_API_KEY").ok(),
+        "claude" => env::var("ANTHROPIC_API_KEY").ok(),
+        "openai" => env::var("OPENAI_API_KEY").ok(),
+        _ => None,
+    }
+    .and_then(|key| clean_api_key(Some(key)))
 }
 
 fn perform_openrouter_request(api_key: &str, payload: &serde_json::Value) -> Result<String, AppError> {

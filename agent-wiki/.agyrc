@@ -1,0 +1,48 @@
+# AGY / agent context map for this vault
+# Plain YAML — no proprietary extensions
+
+vault:
+  root: .
+  readme: README.md
+  architecture: ARCHITECTURE.md
+
+folders:
+  inbox: 00-inbox
+  projects: 10-projects
+  systems: 20-systems
+  runbooks: 30-runbooks
+  agents: 40-agents
+  decisions: 50-decisions
+  references: 60-references
+  archive: 90-archive
+  meta: 99-meta
+
+templates:
+  project: 99-meta/templates/project.md
+  runbook: 99-meta/templates/runbook.md
+  decision: 99-meta/templates/decision.md
+
+frontmatter:
+  required:
+    - id
+    - type
+    - title
+    - status
+    - owner
+    - created
+    - updated
+  optional:
+    - tags
+    - related
+
+read_order:
+  - 10-projects
+  - 30-runbooks
+  - 50-decisions
+  - 20-systems
+  - 40-agents
+  - 60-references
+
+defaults:
+  status: draft
+  tags: []

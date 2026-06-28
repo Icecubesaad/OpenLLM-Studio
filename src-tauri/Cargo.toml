@@ -41,6 +41,8 @@ ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 sha2 = "0.10"
 hex = "0.4"
 zip = "2"
+flate2 = "1"
+tar = "0.4"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

@@ -1165,7 +1165,7 @@ pub async fn deactivate_license(db_path: String) -> Result<(), String> {
         .map_err(|e| format!("Failed to deactivate license: {}", e))
 }
 
-/// Get AI-powered model recommendations based on hardware and use case
+/// Get model recommendations based on hardware and use case
 ///
 /// # Arguments
 /// * `ram_gb` - Available RAM in gigabytes

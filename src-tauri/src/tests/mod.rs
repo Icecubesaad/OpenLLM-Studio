@@ -1,31 +1,29 @@
 #[cfg(test)]
 mod hardware_tests {
-    use crate::hardware::*;
+    use crate::hardware::HardwareDetector;
 
-    #[test]
-    fn test_detect_hardware() {
-        let result = detect_hardware();
+    #[tokio::test]
+    async fn test_detect_hardware() {
+        let result = HardwareDetector::new().detect().await;
         assert!(result.is_ok());
         
         let hw = result.unwrap();
-        assert!(hw.total_ram_gb > 0.0);
+        assert!(hw.ram_gb > 0.0);
         assert!(hw.cpu_cores > 0);
     }
 
-    #[test]
-    fn test_ram_detection() {
-        let result = detect_hardware();
+    #[tokio::test]
+    async fn test_ram_detection() {
+        let result = HardwareDetector::new().detect().await;
         assert!(result.is_ok());
         
         let hw = result.unwrap();
-        assert!(hw.total_ram_gb >= hw.available_ram_gb);
+        assert!(hw.ram_gb > 0.0);
     }
 }
 
 #[cfg(test)]
 mod model_tests {
-    use crate::models::*;
-
     #[test]
     fn test_model_name_parsing() {
         let name = "llama2:7b";
@@ -40,7 +38,7 @@ mod model_tests {
 
 #[cfg(test)]
 mod download_tests {
-    use crate::download_manager::*;
+    use super::{calculate_progress, format_bytes};
 
     #[test]
     fn test_format_bytes() {
@@ -65,7 +63,7 @@ mod download_tests {
 
 #[cfg(test)]
 mod optimization_tests {
-    use crate::optimization::*;
+    use super::{calculate_context_size, calculate_optimal_threads};
 
     #[test]
     fn test_calculate_optimal_threads() {

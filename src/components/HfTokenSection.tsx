@@ -42,7 +42,7 @@ export function HfTokenSection({ token, username, onValidate, onClear, isValidat
         </div>
         <div>
           <h3 className="text-base font-medium text-white">HuggingFace</h3>
-          <p className="text-sm text-[#B1ADA1]">Connect to download models</p>
+          <p className="text-sm text-[#B1ADA1]">Optional for gated or private models</p>
         </div>
       </div>
 

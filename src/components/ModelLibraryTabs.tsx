@@ -1,17 +1,21 @@
-import { useState } from 'react';
 import { MyLibrary } from './MyLibrary';
 import { ModelLibrary } from './ModelLibrary';
 import { HuggingFaceTab } from './HuggingFaceTab';
 
-export function ModelLibraryTabs() {
-  const [activeTab, setActiveTab] = useState<'my-library' | 'browse' | 'huggingface'>('my-library');
+export type ModelLibraryTab = 'my-library' | 'browse' | 'huggingface';
 
+interface ModelLibraryTabsProps {
+  activeTab: ModelLibraryTab;
+  onTabChange: (tab: ModelLibraryTab) => void;
+}
+
+export function ModelLibraryTabs({ activeTab, onTabChange }: ModelLibraryTabsProps) {
   return (
     <div className="flex flex-col h-full">
       {/* Tab navigation */}
       <div className="flex border-b border-dark-border bg-dark-bg-secondary">
         <button
-          onClick={() => setActiveTab('my-library')}
+          onClick={() => onTabChange('my-library')}
           className={`px-6 py-3 font-medium transition-all relative ${
             activeTab === 'my-library'
               ? 'text-dark-accent'
@@ -29,7 +33,7 @@ export function ModelLibraryTabs() {
           )}
         </button>
         <button
-          onClick={() => setActiveTab('browse')}
+          onClick={() => onTabChange('browse')}
           className={`px-6 py-3 font-medium transition-all relative ${
             activeTab === 'browse'
               ? 'text-dark-accent'
@@ -47,7 +51,7 @@ export function ModelLibraryTabs() {
           )}
         </button>
         <button
-          onClick={() => setActiveTab('huggingface')}
+          onClick={() => onTabChange('huggingface')}
           className={`px-6 py-3 font-medium transition-all relative ${
             activeTab === 'huggingface'
               ? 'text-dark-accent'
@@ -70,7 +74,7 @@ export function ModelLibraryTabs() {
       <div className="flex-1 overflow-hidden">
         {activeTab === 'my-library' ? (
           <div className="h-full overflow-y-auto">
-            <MyLibrary />
+            <MyLibrary onBrowseModels={() => onTabChange('browse')} />
           </div>
         ) : activeTab === 'browse' ? (
           <div className="h-full overflow-y-auto">

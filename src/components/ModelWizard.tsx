@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useHardwareInfo } from '../hooks/useHardwareInfo';
-import { downloadHfModel, getHfModelFiles, getModelRecommendations, listenToDownloadProgress, listenToWizardStatus } from '../lib/tauri';
+import { downloadHfModel, getHfModelFiles, getModelRecommendations, listenToDownloadProgress, listenToWizardStatus, pullModelWithRetry } from '../lib/tauri';
 import type { DownloadProgress } from '../lib/tauri';
 import type { HfModelFile } from '../lib/types';
 import { useAppStore } from '../store/appStore';
@@ -20,9 +20,10 @@ interface ModelRecommendation {
 
 interface ModelWizardProps {
   onClose?: () => void;
+  onBrowseManually?: () => void;
 }
 
-export function ModelWizard({ onClose }: ModelWizardProps) {
+export function ModelWizard({ onClose, onBrowseManually }: ModelWizardProps) {
   const [step, setStep] = useState(1);
   const [useCase, setUseCase] = useState<'coding' | 'chat' | 'agents'>('chat');
   const [recommendations, setRecommendations] = useState<ModelRecommendation[]>([]);
@@ -44,6 +45,15 @@ export function ModelWizard({ onClose }: ModelWizardProps) {
   const filesRequestRef = useRef(0);
   const lastAutoFetchKeyRef = useRef<string | null>(null);
 
+  const browseManually = () => {
+    if (onBrowseManually) {
+      onBrowseManually();
+      return;
+    }
+
+    onClose?.();
+  };
+
   const useCaseDescriptions = {
     coding: 'Optimized for code generation, refactoring, and technical tasks',
     chat: 'Best for conversational AI and general-purpose interactions',
@@ -54,9 +64,10 @@ export function ModelWizard({ onClose }: ModelWizardProps) {
     () => hardwareInfo ? Math.max(hardwareInfo.ram_gb, hardwareInfo.vram_gb) : 8,
     [hardwareInfo],
   );
+  const selectedModelIsCatalog = selectedModel ? isCatalogRecommendation(selectedModel) : false;
 
   const recommendedFilename = useMemo(() => {
-    if (!selectedModel || availableFiles.length === 0) {
+    if (!selectedModel || isCatalogRecommendation(selectedModel) || availableFiles.length === 0) {
       return null;
     }
 
@@ -78,7 +89,6 @@ export function ModelWizard({ onClose }: ModelWizardProps) {
       && hardwareInfo
       && recommendations.length === 0
       && !loadingRecs
-      && hasAnyApiKey
       && autoFetchKey
       && lastAutoFetchKeyRef.current !== autoFetchKey
     ) {
@@ -88,7 +98,7 @@ export function ModelWizard({ onClose }: ModelWizardProps) {
   }, [step, hardwareInfo, recommendations.length, loadingRecs, hasAnyApiKey, useCase]);
 
   useEffect(() => {
-    if (step !== 4 || !selectedModel) {
+    if (step !== 4 || !selectedModel || isCatalogRecommendation(selectedModel)) {
       return;
     }
 
@@ -212,14 +222,6 @@ export function ModelWizard({ onClose }: ModelWizardProps) {
     const oaKey = state.openAiApiKey;
     const preferredProvider = state.wizardProvider;
 
-    if (!orKey && !clKey && !oaKey) {
-      setRecommendations([]);
-      setSelectedModel(null);
-      setLoadingRecs(false);
-      setRecError(null);
-      return;
-    }
-
     const providerCandidates = [
       { provider: preferredProvider, apiKey: preferredProvider === 'openrouter' ? orKey : preferredProvider === 'claude' ? clKey : oaKey },
       { provider: 'openrouter' as const, apiKey: orKey },
@@ -228,24 +230,16 @@ export function ModelWizard({ onClose }: ModelWizardProps) {
     ];
 
     const activeProvider = providerCandidates.find((candidate) => candidate.apiKey);
-
-    if (!activeProvider?.apiKey) {
-      setRecommendations([]);
-      setSelectedModel(null);
-      setLoadingRecs(false);
-      setRecError(`The selected AI wizard provider (${preferredProvider}) does not have an API key configured yet.`);
-      return;
-    }
-
-    const selectedProviderModel = activeProvider.provider === 'openrouter'
+    const providerForRequest = activeProvider?.provider || 'openrouter';
+    const selectedProviderModel = providerForRequest === 'openrouter'
       ? state.openRouterModel
-      : activeProvider.provider === 'claude'
+      : providerForRequest === 'claude'
         ? state.claudeModel
         : state.openAiModel;
 
     setLoadingRecs(true);
     setRecError(null);
-    setWizardStage('Getting AI recommendation...');
+    setWizardStage(activeProvider?.apiKey ? 'Getting AI recommendation...' : 'Finding local model options...');
 
     let lastError: unknown = null;
 
@@ -260,8 +254,8 @@ export function ModelWizard({ onClose }: ModelWizardProps) {
             hardwareInfo.ram_gb,
             hardwareInfo.vram_gb,
             useCase,
-            activeProvider.apiKey || undefined,
-            activeProvider.provider,
+            activeProvider?.apiKey || undefined,
+            providerForRequest,
             selectedProviderModel,
             hfToken || undefined,
           ) as ModelRecommendation[];
@@ -305,25 +299,41 @@ export function ModelWizard({ onClose }: ModelWizardProps) {
   };
 
   const handleDownload = async () => {
-    if (!selectedModel || !selectedFile) {
+    if (!selectedModel) {
       return;
     }
 
-    const modelName = deriveModelName(selectedModel.repo_id, selectedFile.filename);
+    const isCatalogModel = isCatalogRecommendation(selectedModel);
+    if (!isCatalogModel && !selectedFile) {
+      return;
+    }
+
+    const modelName = isCatalogModel
+      ? selectedModel.model_id
+      : deriveModelName(selectedModel.repo_id, selectedFile!.filename);
 
     setDownloading(true);
     setDownloadProgress(null);
     setActiveDownloadModelName(modelName);
-    setWizardStage(`Starting ${selectedFile.quantization || 'selected'} download...`);
+    setWizardStage(isCatalogModel
+      ? `Pulling ${selectedModel.model_name}...`
+      : `Starting ${selectedFile!.quantization || 'selected'} download...`);
     onClose?.();
 
     try {
-      await downloadHfModel(
-        selectedModel.repo_id,
-        selectedFile.filename,
-        modelName,
-        hfToken || undefined,
-      );
+      if (isCatalogModel) {
+        await pullModelWithRetry(
+          selectedModel.model_id,
+          selectedModel.quantization || undefined,
+        );
+      } else {
+        await downloadHfModel(
+          selectedModel.repo_id,
+          selectedFile!.filename,
+          modelName,
+          hfToken || undefined,
+        );
+      }
     } catch (error) {
       setWizardStage(null);
       setDownloading(false);
@@ -460,13 +470,13 @@ export function ModelWizard({ onClose }: ModelWizardProps) {
         <div className="space-y-4">
           <div>
             <h3 className="text-xl font-semibold text-dark-text mb-2">Step 3: Select Model</h3>
-            <p className="text-dark-text-secondary">AI-powered recommendations based on your hardware and use case</p>
+            <p className="text-dark-text-secondary">Recommendations based on your hardware and use case</p>
           </div>
 
           {loadingRecs ? (
             <div className="bg-dark-surface rounded-lg p-6 text-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-dark-accent mx-auto mb-3"></div>
-              <p className="text-dark-text-secondary">{wizardStage || 'Getting AI recommendation...'}</p>
+              <p className="text-dark-text-secondary">{wizardStage || 'Finding local model options...'}</p>
             </div>
           ) : recommendations.length > 0 ? (
             <div className="space-y-3">
@@ -483,7 +493,9 @@ export function ModelWizard({ onClose }: ModelWizardProps) {
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <h4 className="text-dark-text font-semibold">{rec.model_name}</h4>
-                      <p className="text-sm text-dark-text-secondary">{rec.repo_id}</p>
+                      <p className="text-sm text-dark-text-secondary">
+                        {isCatalogRecommendation(rec) ? 'Ollama catalog pull' : rec.repo_id}
+                      </p>
                     </div>
                     <div className="text-right">
                       <div className="text-dark-accent font-semibold">{(rec.suitability_score * 100).toFixed(0)}%</div>
@@ -492,7 +504,7 @@ export function ModelWizard({ onClose }: ModelWizardProps) {
                   </div>
                   <p className="text-sm text-dark-text-secondary mb-3">{rec.description}</p>
                   <div className="flex gap-4 text-xs text-dark-text-secondary">
-                    <span>{rec.quantization || 'GGUF'}</span>
+                    <span>{isCatalogRecommendation(rec) ? rec.model_id : (rec.quantization || 'GGUF')}</span>
                     <span>{rec.estimated_memory_gb.toFixed(1)} GB</span>
                     <span>~{rec.estimated_tokens_per_sec.toFixed(0)} tok/s</span>
                     <span>{(rec.quality_rating * 100).toFixed(0)}% quality</span>
@@ -500,42 +512,51 @@ export function ModelWizard({ onClose }: ModelWizardProps) {
                 </button>
               ))}
             </div>
-          ) : !hasAnyApiKey ? (
-            <div className="bg-dark-surface rounded-lg p-6 text-center">
-              <p className="text-dark-text font-medium mb-2">API key is missing</p>
-              <p className="text-dark-text-secondary text-sm">
-                Please add an API key in Settings → Integrations to get AI-powered model recommendations.
-              </p>
-            </div>
           ) : recError ? (
             <div className="bg-dark-surface rounded-lg p-6 text-center">
               <p className="text-dark-text font-medium mb-2">Failed to get recommendations</p>
               <p className="text-dark-text-secondary text-sm mb-4">{recError}</p>
-              <button
-                onClick={() => {
-                  lastAutoFetchKeyRef.current = null;
-                  void fetchRecommendations();
-                }}
-                className="px-4 py-2 bg-dark-accent hover:bg-dark-accent-hover text-white rounded-lg"
-              >
-                Retry
-              </button>
+              <div className="flex flex-col sm:flex-row justify-center gap-2">
+                <button
+                  onClick={() => {
+                    lastAutoFetchKeyRef.current = null;
+                    void fetchRecommendations();
+                  }}
+                  className="px-4 py-2 bg-dark-accent hover:bg-dark-accent-hover text-white rounded-lg"
+                >
+                  Retry
+                </button>
+                <button
+                  onClick={browseManually}
+                  className="px-4 py-2 border border-dark-border text-dark-text rounded-lg hover:bg-dark-bg"
+                >
+                  Browse manually
+                </button>
+              </div>
             </div>
           ) : (
             <div className="bg-dark-surface rounded-lg p-6 text-center">
               <p className="text-dark-text font-medium mb-2">No recommendations yet</p>
               <p className="text-dark-text-secondary text-sm mb-4">
-                Click below to get AI-powered model recommendations.
+                Click below to find local model options for your hardware.
               </p>
-              <button
-                onClick={() => {
-                  lastAutoFetchKeyRef.current = null;
-                  void fetchRecommendations();
-                }}
-                className="px-4 py-2 bg-dark-accent hover:bg-dark-accent-hover text-white rounded-lg"
-              >
-                Get Recommendations
-              </button>
+              <div className="flex flex-col sm:flex-row justify-center gap-2">
+                <button
+                  onClick={() => {
+                    lastAutoFetchKeyRef.current = null;
+                    void fetchRecommendations();
+                  }}
+                  className="px-4 py-2 bg-dark-accent hover:bg-dark-accent-hover text-white rounded-lg"
+                >
+                  Find Models
+                </button>
+                <button
+                  onClick={browseManually}
+                  className="px-4 py-2 border border-dark-border text-dark-text rounded-lg hover:bg-dark-bg"
+                >
+                  Browse manually
+                </button>
+              </div>
             </div>
           )}
 
@@ -547,7 +568,13 @@ export function ModelWizard({ onClose }: ModelWizardProps) {
               Back
             </button>
             <button
-              onClick={() => setStep(4)}
+              onClick={() => {
+                if (!selectedModel) {
+                  return;
+                }
+
+                setStep(isCatalogRecommendation(selectedModel) ? 5 : 4);
+              }}
               disabled={!selectedModel}
               className="flex-1 px-4 py-2 bg-dark-accent hover:bg-dark-accent-hover text-white rounded-lg disabled:opacity-50"
             >
@@ -557,7 +584,7 @@ export function ModelWizard({ onClose }: ModelWizardProps) {
         </div>
       )}
 
-      {step === 4 && selectedModel && (
+      {step === 4 && selectedModel && !selectedModelIsCatalog && (
         <div className="space-y-4">
           <div>
             <h3 className="text-xl font-semibold text-dark-text mb-2">Step 4: Select Quantization</h3>
@@ -651,11 +678,15 @@ export function ModelWizard({ onClose }: ModelWizardProps) {
         </div>
       )}
 
-      {step === 5 && selectedModel && selectedFile && (
+      {step === 5 && selectedModel && (selectedModelIsCatalog || selectedFile) && (
         <div className="space-y-4">
           <div>
             <h3 className="text-xl font-semibold text-dark-text mb-2">Step 5: Download & Deploy</h3>
-            <p className="text-dark-text-secondary">Ready to download the exact file you selected</p>
+            <p className="text-dark-text-secondary">
+              {selectedModelIsCatalog
+                ? 'Ready to pull the selected catalog model'
+                : 'Ready to download the exact file you selected'}
+            </p>
           </div>
 
           <div className="bg-dark-surface rounded-lg p-6 space-y-4">
@@ -667,29 +698,47 @@ export function ModelWizard({ onClose }: ModelWizardProps) {
                   <span className="text-dark-text text-right">{selectedModel.model_name}</span>
                 </div>
                 <div className="flex justify-between gap-4">
-                  <span className="text-dark-text-secondary">Repository:</span>
-                  <span className="text-dark-text text-right break-all">{selectedModel.repo_id}</span>
+                  <span className="text-dark-text-secondary">Source:</span>
+                  <span className="text-dark-text text-right break-all">
+                    {selectedModelIsCatalog ? 'Ollama catalog pull' : selectedModel.repo_id}
+                  </span>
                 </div>
+                {selectedModelIsCatalog && (
+                  <div className="flex justify-between gap-4">
+                    <span className="text-dark-text-secondary">Catalog name:</span>
+                    <span className="text-dark-text text-right break-all">{selectedModel.model_id}</span>
+                  </div>
+                )}
                 <div className="flex justify-between gap-4">
                   <span className="text-dark-text-secondary">Quantization:</span>
-                  <span className="text-dark-text">{selectedFile.quantization || 'Unknown'}</span>
+                  <span className="text-dark-text">
+                    {selectedModelIsCatalog ? (selectedModel.quantization || 'Automatic') : (selectedFile?.quantization || 'Unknown')}
+                  </span>
                 </div>
-                <div className="flex justify-between gap-4">
-                  <span className="text-dark-text-secondary">File size:</span>
-                  <span className="text-dark-text">{formatFileSizeGb(selectedFile.size)}</span>
-                </div>
+                {!selectedModelIsCatalog && selectedFile && (
+                  <div className="flex justify-between gap-4">
+                    <span className="text-dark-text-secondary">File size:</span>
+                    <span className="text-dark-text">{formatFileSizeGb(selectedFile.size)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between gap-4">
                   <span className="text-dark-text-secondary">Estimated RAM:</span>
-                  <span className="text-dark-text">{selectedFile.estimated_ram_gb.toFixed(1)} GB</span>
+                  <span className="text-dark-text">
+                    {(selectedModelIsCatalog ? selectedModel.estimated_memory_gb : selectedFile?.estimated_ram_gb || 0).toFixed(1)} GB
+                  </span>
                 </div>
-                <div className="flex justify-between gap-4">
-                  <span className="text-dark-text-secondary">AI recommended:</span>
-                  <span className="text-dark-text">{selectedModel.quantization || 'No preferred quantization'}</span>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <span className="text-dark-text-secondary">Selected file:</span>
-                  <span className="text-dark-text text-right break-all">{selectedFile.filename}</span>
-                </div>
+                {!selectedModelIsCatalog && selectedFile && (
+                  <>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-dark-text-secondary">Recommended:</span>
+                      <span className="text-dark-text">{selectedModel.quantization || 'No preferred quantization'}</span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-dark-text-secondary">Selected file:</span>
+                      <span className="text-dark-text text-right break-all">{selectedFile.filename}</span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -723,7 +772,7 @@ export function ModelWizard({ onClose }: ModelWizardProps) {
 
           <div className="flex gap-2">
             <button
-              onClick={() => setStep(4)}
+              onClick={() => setStep(selectedModelIsCatalog ? 3 : 4)}
               disabled={downloading}
               className="flex-1 px-4 py-2 border border-dark-border text-dark-text rounded-lg hover:bg-dark-surface disabled:opacity-50"
             >
@@ -734,7 +783,7 @@ export function ModelWizard({ onClose }: ModelWizardProps) {
               disabled={downloading}
               className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50"
             >
-              {downloading ? 'Downloading...' : 'Download & Deploy'}
+              {downloading ? 'Downloading...' : selectedModelIsCatalog ? 'Pull & Deploy' : 'Download & Deploy'}
             </button>
           </div>
         </div>
@@ -777,6 +826,10 @@ function getQuantQualityLabel(quantization: string | null | undefined): string {
     default:
       return 'GGUF file';
   }
+}
+
+function isCatalogRecommendation(recommendation: ModelRecommendation): boolean {
+  return !recommendation.repo_id || !recommendation.filename;
 }
 
 function delay(ms: number): Promise<void> {
